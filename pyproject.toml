@@ -1,0 +1,21 @@
+[project]
+name = 'voxynth'
+description = 'Deep-learning utilites for 2D and 3D image synthesis and augmentation'
+keywords = ['synthesis', 'augmentation', 'deeplearning']
+classifiers = [
+    'License :: OSI Approved :: MIT License',
+    'Programming Language :: Python :: 3',
+    'Natural Language :: English',
+    'Topic :: Scientific/Engineering',
+    'Intended Audience :: Science/Research',
+]
+requires-python = '>=3.6'
+dynamic = ['version', 'readme']
+dependencies = [
+    'numpy',
+    'torch',
+]
+
+[tool.setuptools.dynamic]
+readme = {file = ['readme.md'], content-type = 'text/markdown'}
+version = {attr = 'voxynth.__version__'}
