@@ -70,7 +70,7 @@ def labels_to_image(
     torch.Tensor
         Synthetic image with the same shape as the input `labels` tensor.
     """
-    labels = labels.type(toch.int64)
+    labels = labels.type(torch.int64)
     max_label = labels.max() + 1
     if intensity_ranges is not None:
         mapping = torch.zeros(max_label, device=labels.device, dtype=torch.float32)
