@@ -36,7 +36,7 @@ def perlin(
     res = torch.ceil(shape / d).type(torch.int32)
     intermediate_shape = d * res
 
-    grid = torch.meshgrid([torch.linspace(0, r, d) for r, d in zip(res, intermediate_shape)], indexing='ij')
+    grid = torch.meshgrid([torch.linspace(0, r, d, device=device) for r, d in zip(res, intermediate_shape)], indexing='ij')
     grid = torch.stack(grid, dim=-1) % 1
 
     if ndim == 2:

@@ -56,7 +56,10 @@ def resize(
         mode = 'nearest' if nearest else linear
 
         # apply interpolation to the image
-        image = torch.nn.functional.interpolate(image.unsqueeze(0), target_shape, mode=mode)
+        if nearest:
+            image = torch.nn.functional.interpolate(image.unsqueeze(0), target_shape, mode=mode)
+        else:
+            image = torch.nn.functional.interpolate(image.unsqueeze(0), target_shape, mode=mode)
         image = image.squeeze(0)
 
         # convert image back to its original dtype if necessary
@@ -309,7 +312,8 @@ def random_affine(
         ndim=ndim,
         translation=translation,
         rotation=rotation,
-        scale=scale)
+        scale=scale,
+        device=device)
     return aff
 
 

@@ -138,7 +138,7 @@ def image_augment(
 
     # mask, if provided, should be a boolean tensor of the same base shape (no channel dim)
     if mask is None:
-        mask = image.sum(0) > 0
+        mask = image > 0
     elif mask.ndim != (image.ndim - 1):
         raise ValueError(f'expected mask to have {ndim} dims, but got shape {mask.shape}')
 
@@ -163,7 +163,7 @@ def image_augment(
             else:
                 # otherwise just smooth in all dimensions
                 sigma = np.random.uniform(0, max_sigma, size=ndim)
-            cimg = gaussian_blur(cimg.unsqueeze(0), sigma)
+            cimg = gaussian_blur(cimg.unsqueeze(0), sigma).squeeze(0)
     
         # ---- background synthesis ----
 
@@ -378,8 +378,8 @@ def random_cropping_mask(mask: Tensor) -> Tensor:
     # an axis (or two) as a 'crop axis', and moves that axis towards the tissue by
     # some reasonable amount
     shape = mask.shape[1:]
-    ndim = len(shape)
-    crop_mask = torch.zeros(shape, dtype=torch.bool, device=device)
+    ndim = len(shape) - 1
+    crop_mask = torch.zeros(shape, dtype=torch.bool, device=mask.device)
     nonzeros = mask.nonzero()[:, 1:]
     mincoord = nonzeros.min(0)[0].cpu()
     maxcoord = nonzeros.max(0)[0].cpu() + 1
@@ -396,4 +396,4 @@ def random_cropping_mask(mask: Tensor) -> Tensor:
         else:
             cropping[axis] = slice(s.stop - displacement, shape[axis])
         crop_mask[tuple(cropping)] = 1
-    return crop_mask
+    return crop_mask.view(mask.shape)
