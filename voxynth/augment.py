@@ -138,7 +138,7 @@ def image_augment(
 
     # mask, if provided, should be a boolean tensor of the same base shape (no channel dim)
     if mask is None:
-        mask = image > 0
+        mask = image.sum(0) > 0
     elif mask.ndim != (image.ndim - 1):
         raise ValueError(f'expected mask to have {ndim} dims, but got shape {mask.shape}')
 

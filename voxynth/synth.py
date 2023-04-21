@@ -28,7 +28,7 @@ def remap_intesities(
     """
     device = image.device
 
-    image = image.type(torch.int64) - image.min()
+    image = image.type(torch.float32) - image.min()
     image /= image.max()
     image *= (bins - 1)
     image = image.type(torch.int64)
@@ -36,7 +36,7 @@ def remap_intesities(
     # these were somewhat arbitrarily chosen based on
     # testing a few values
     samples = 2
-    radians = 6
+    radians = 1
 
     # generate noise
     noise = torch.ones(bins, device=device, dtype=torch.float32)
@@ -46,6 +46,8 @@ def remap_intesities(
         noise *= torch.sin(torch.linspace(low, high, bins,
                     device=device, dtype=torch.float32))
 
+    noise -= noise.min()
+    noise /= noise.max()
     return noise[image]
 
 
