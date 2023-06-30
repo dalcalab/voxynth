@@ -5,6 +5,7 @@ from torch import Tensor
 from typing import List, Tuple
 
 from .utility import chance
+from .utility import quantile
 from .utility import grid_coordinates
 from .filter import gaussian_blur
 from .noise import perlin
@@ -14,7 +15,9 @@ def image_augment(
     image: Tensor,
     mask: Tensor = None,
     voxsize: List[float] = 1.0,
-    normalize_input: bool = True,
+    normalize: bool = True,
+    normalize_min_quantile: float = None,
+    normalize_max_scale: float = None,
     smoothing_probability: float = 0.0,
     smoothing_one_axis_probability: float = 0.5,
     smoothing_max_sigma: float = 2.0,
@@ -47,7 +50,7 @@ def image_augment(
     considered background and replaced by synthetic noise and/or other effects.
 
     Note that this function expects the image singals to be between 0 and 1, so it will
-    min/max normalize the input by default. This can be disabled with the `normalize_input`
+    min/max normalize the input by default. This can be disabled with the `normalize`
     parameter.
 
     Parameters
@@ -59,9 +62,15 @@ def image_augment(
     voxsize: float or List[float], optional
         The relative size of the voxel. This is used to appropriately scale
         spatial-based parameters.
-    normalize_input: bool, optional
+    normalize: bool, optional
         If True, the image is min/max normalized before augmentation. Not necessary if the
         image intensities are already between 0 and 1.
+    normalize_min_quantile: float, optional
+        If provided, this quantile sets the minimum sample intensity for normalization scaling.
+        If None, the normalization scale will not be less than the maximum image intensity.
+    normalize_max_scale: float, optional
+        If provided, this scale sets the maximum sample intensity for normalization scaling.
+        It is a multiplicative factor, so 1.0 means the maximum intensity will not be scaled.
     smoothing_probability: float, optional
         The probability of applying a gaussian smoothing kernel.
     smoothing_one_axis_probability: float, optional
@@ -127,15 +136,6 @@ def image_augment(
     # convert to float32 if necessary
     image = image.clone() if torch.is_floating_point(image) else image.type(torch.float32)
 
-    # min/max normalize since everything below operates with the
-    # assumption that intensities are between 0 and 1
-    if normalize_input:
-        dims = tuple([i + 1 for i in range(ndim)])
-        image -= image.amin(dim=dims, keepdim=True)
-        image /= image.amax(dim=dims, keepdim=True)
-    elif image.min() < 0 or image.max() > 1:
-        raise ValueError('image intensities must be between 0 and 1')
-
     # mask, if provided, should be a boolean tensor of the same base shape (no channel dim)
     if mask is None:
         mask = image.sum(0) > 0
@@ -150,6 +150,38 @@ def image_augment(
 
         # grab the current channel
         cimg = image[channel]
+
+        # ---- normalization ----
+
+        # min/max normalize since everything below operates with the
+        # assumption that intensities are between 0 and 1
+        if normalize:
+            cimg -= cimg.min()
+
+            # we have a few options for normalization, let's randomly choose one
+            methods = ['max']
+            if normalize_min_quantile is not None:
+                methods.append('quantile')
+            if normalize_max_scale is not None:
+                methods.append('scale-up')
+            method = np.random.choice(methods)
+
+            if method == 'max':
+                # standard min/max normalization
+                cimg /= cimg.max()
+            elif method == 'quantile':
+                # use a random quantile between min_quantile and 1.0
+                q = np.random.uniform(normalize_min_quantile, 1.0)
+                cimg /= quantile(cimg, q)
+                cimg.clamp_(0, 1)
+            elif method == 'scale-up':
+                # use a random scale between 1.0 and max_scale
+                cimg /= np.random.uniform(1.0, normalize_max_scale) * cimg.max()
+            else:
+                raise ValueError(f'unknown normalization method: {method}')
+
+        elif image.min() < 0 or image.max() > 1:
+            raise ValueError('image intensities must be between 0 and 1')
 
         # ---- intensity smoothing ----
 

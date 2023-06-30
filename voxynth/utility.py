@@ -45,3 +45,22 @@ def grid_coordinates(shape, device : torch.device = None) -> Tensor:
     ranges = [torch.arange(s, dtype=torch.float32, device=device) for s in shape]
     meshgrid = torch.stack(torch.meshgrid(*ranges, indexing='ij'), dim=-1)
     return meshgrid
+
+
+def quantile(arr, q):
+    """
+    TODOC
+    """
+    if q < 0 or q > 1:
+        raise ValueError(f'quantile must be between 0 and 1, got {q}')
+    if q == 0:
+        return arr.min()
+    if q == 1:
+        return arr.max()
+    arr = arr.flatten()
+    if q > 0.5:
+        k = int(arr.numel() * (1.0 - q)) + 1
+        return arr.topk(k, largest=True, sorted=False).values.min()
+    else:
+        k = int(arr.numel() * q) + 1
+        return arr.topk(k, largest=False, sorted=False).values.max()
