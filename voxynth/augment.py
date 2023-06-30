@@ -18,6 +18,7 @@ def image_augment(
     normalize: bool = True,
     normalize_min_quantile: float = None,
     normalize_max_scale: float = None,
+    inversion_probability: float = 0.0,
     smoothing_probability: float = 0.0,
     smoothing_one_axis_probability: float = 0.5,
     smoothing_max_sigma: float = 2.0,
@@ -71,6 +72,8 @@ def image_augment(
     normalize_max_scale: float, optional
         If provided, this scale sets the maximum sample intensity for normalization scaling.
         It is a multiplicative factor, so 1.0 means the maximum intensity will not be scaled.
+    inversion_probability: float, optional
+        The probability of inverting the image intensities.
     smoothing_probability: float, optional
         The probability of applying a gaussian smoothing kernel.
     smoothing_one_axis_probability: float, optional
@@ -182,6 +185,10 @@ def image_augment(
 
         elif image.min() < 0 or image.max() > 1:
             raise ValueError('image intensities must be between 0 and 1')
+
+        # invert the image intensities
+        if chance(inversion_probability):
+            cimg = 1 - cimg
 
         # ---- intensity smoothing ----
 
