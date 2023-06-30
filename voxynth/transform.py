@@ -474,4 +474,7 @@ def random_transform(
             disp = disp.movedim(-1, 0)
             trf += spatial_transform(disp, trf, meshgrid=meshgrid).movedim(0, -1)
 
-    return displacement_field_to_coords(trf)
+    if trf is not None:
+        trf = displacement_field_to_coords(trf)
+
+    return trf
