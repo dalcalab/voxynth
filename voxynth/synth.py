@@ -51,6 +51,25 @@ def remap_intesities(
     return noise[image]
 
 
+def densities_to_image(densities: Tensor) -> Tensor:
+    """
+    Replace density values with random signal between 0 and 1.
+
+    Parameters
+    ----------
+    densities : torch.Tensor
+        Multi-channel image of class density (probability) values
+
+    Returns
+    -------
+    torch.Tensor
+        Synthetic image with the same geometry as the input `densities` tensor.
+    """
+    dims = [1] * (densities.ndim - 1)
+    intensities = torch.rand(densities.shape[0], *dims)
+    return torch.sum(densities * intensities, axis=0).unsqueeze(0)
+
+
 def labels_to_image(
     labels: Tensor,
     intensity_ranges: Dict = None) -> Tensor:
