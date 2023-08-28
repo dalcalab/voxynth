@@ -455,7 +455,8 @@ def random_transform(
             max_translation=max_translation,
             max_rotation=max_rotation,
             max_scaling=max_scaling,
-            device=device)
+            device=device
+            )
         trf = affine_to_displacement_field(matrix, meshgrid)
 
     # generate a nonlinear transform
@@ -466,7 +467,9 @@ def random_transform(
             shape=shape,
             scale=scale,
             wavelength=wavelength,
-            integrations=warp_integrations)
+            integrations=warp_integrations,
+            device=device
+            )
 
         if trf is None:
             trf = disp
