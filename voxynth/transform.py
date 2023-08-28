@@ -332,7 +332,7 @@ def integrate_displacement_field(
 
     disp = disp / (2 ** steps)
     for _ in range(steps):
-        disp += spatial_transform(disp, disp, meshgrid=meshgrid)
+        disp += spatial_transform(disp.movedim(-1, 0), disp, meshgrid=meshgrid, isdisp=True).movedim(0, -1)
 
     return disp
 
