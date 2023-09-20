@@ -237,6 +237,41 @@ def angles_to_rotation_matrix(
     return matrix.to(rotation.device)
 
 
+def random_affine(
+    ndim: int,
+    max_translation: float = 0,
+    max_rotation: float = 0,
+    max_scaling: float = 1,
+    device: torch.device = None) -> Tensor:
+    """
+    TODOC
+    """
+
+    # 
+    translation_range = sorted([-max_translation, max_translation])
+    translation = np.random.uniform(*translation_range, size=ndim)
+
+    # 
+    rotation_range = sorted([-max_rotation, max_rotation])
+    rotation = np.random.uniform(*rotation_range, size=(1 if ndim == 2 else 3))
+
+    # 
+    if max_scaling < 1:
+        raise ValueError('max scaling to random affine cannot be less than 1, '
+                         'see function doc for more info')
+    inv = np.random.choice([-1, 1], size=ndim)
+    scale = np.random.uniform(1, max_scaling, size=ndim) ** inv
+
+    # compose from random paramters
+    aff = compose_affine(
+        ndim=ndim,
+        translation=translation,
+        rotation=rotation,
+        scale=scale,
+        device=device)
+    return aff
+
+
 def affine_to_displacement_field(
     affine : Tensor,
     meshgrid : Tensor,
@@ -279,42 +314,8 @@ def affine_to_displacement_field(
     # reshape the shift vector to match the shape of the meshgrid and subtract
     # the original meshgrid to get the displacement field
     shift = shift.view(*shape, ndim) - grid
+
     return shift
-
-
-def random_affine(
-    ndim: int,
-    max_translation: float = 0,
-    max_rotation: float = 0,
-    max_scaling: float = 1,
-    device: torch.device = None) -> Tensor:
-    """
-    TODOC
-    """
-
-    # 
-    translation_range = sorted([-max_translation, max_translation])
-    translation = np.random.uniform(*translation_range, size=ndim)
-
-    # 
-    rotation_range = sorted([-max_rotation, max_rotation])
-    rotation = np.random.uniform(*rotation_range, size=(1 if ndim == 2 else 3))
-
-    # 
-    if max_scaling < 1:
-        raise ValueError('max scaling to random affine cannot be less than 1, '
-                         'see function doc for more info')
-    inv = np.random.choice([-1, 1], size=ndim)
-    scale = np.random.uniform(1, max_scaling, size=ndim) ** inv
-
-    # compose from random paramters
-    aff = compose_affine(
-        ndim=ndim,
-        translation=translation,
-        rotation=rotation,
-        scale=scale,
-        device=device)
-    return aff
 
 
 def integrate_displacement_field(
@@ -332,27 +333,32 @@ def integrate_displacement_field(
 
     disp = disp / (2 ** steps)
     for _ in range(steps):
-        disp += spatial_transform(disp.movedim(-1, 0), disp, meshgrid=meshgrid, isdisp=True).movedim(0, -1)
+        disp += spatial_transform(disp.movedim(-1, 0), disp, meshgrid=meshgrid).movedim(0, -1)
 
     return disp
 
 
 def random_displacement_field(
     shape : List[int],
-    scale : float = 10,
-    wavelength : int = 10,
+    smoothing : float = 10,
+    magnitude : float = 10,
     integrations : int = 0,
+    voxsize : float = 1,
     meshgrid : Tensor = None,
     device: torch.device = None) -> Tensor:
     """
     TODOC
     """
+    smoothing = smoothing / voxsize
+    magnitude = magnitude / voxsize
+
     ndim = len(shape)
-    disp = [perlin(shape=shape, wavelength=wavelength, device=device) for i in range(ndim)]
+    disp = [perlin(shape, smoothing, magnitude, device=device) for i in range(ndim)]
     disp = torch.stack(disp, dim=-1)
-    disp *= scale / disp.std()
+
     if integrations > 0:
         disp = integrate_displacement_field(disp, integrations, meshgrid)
+
     return disp
 
 
@@ -371,24 +377,35 @@ def displacement_field_to_coords(disp, meshgrid=None) -> Tensor:
         coords[..., d] *= 2 / (shape[d] - 1)
         coords[..., d] -= 1
 
-    if ndim == 2:
-        coords = coords[..., [1, 0]]
-    elif ndim == 3:
-        coords = coords[..., [2, 1, 0]]
+    coords = coords.flip(-1)
 
     return coords
+
+
+def coords_to_displacement_field(coords, meshgrid=None) -> Tensor:
+    """
+    TODOC
+    """
+    if meshgrid is None:
+        meshgrid = grid_coordinates(coords.shape[:-1], device=coords.device)
+
+    raise NotImplementedError('coords_to_displacement_field is not yet implemented. '
+                              'contact andrew if you get this... or implement it :)')
 
 
 def spatial_transform(
     image : Tensor,
     trf : Tensor,
     method : str = 'linear',
-    isdisp : bool = False,
+    isdisp : bool = True,
     meshgrid : Tensor = None,
     rotate_around_center : bool = True) -> Tensor:
     """
     TODOC
     """
+    if trf is None:
+        return image
+
     if trf.ndim == 2:
         if meshgrid is None:
             meshgrid = grid_coordinates(image.shape[1:], device=image.device)
@@ -397,10 +414,9 @@ def spatial_transform(
                     rotate_around_center=rotate_around_center)
         isdisp = True
 
+    # 
     if isdisp:
-        if meshgrid is None:
-            meshgrid = grid_coordinates(image.shape[1:], device=image.device)
-        trf = displacement_field_to_coords(trf, meshgrid)
+        trf = displacement_field_to_coords(trf, meshgrid=meshgrid)
 
     # 
     method = 'bilinear' if method == 'linear' else method
@@ -415,39 +431,42 @@ def spatial_transform(
     # 
     image = image.unsqueeze(0)
     trf = trf.unsqueeze(0)
-    interped = torch.nn.functional.grid_sample(image, trf,
-                            align_corners=True, mode=method)
+    interped = torch.nn.functional.grid_sample(image, trf, align_corners=True, mode=method)
     interped = interped.squeeze(0)
 
     # 
     if reset_type is not None:
         interped = interped.type(reset_type)
+
     return interped
 
 
 def random_transform(
     shape : List[int],
-    affine_probability : float = 0.0,
-    max_translation : float = 0.0,
-    max_rotation : float = 0.0,
-    max_scaling : float = 1.0,
-    warp_probability : float = 0.0,
+    affine_probability : float = 1.0,
+    max_translation : float = 5.0,
+    max_rotation : float = 5.0,
+    max_scaling : float = 1.1,
+    warp_probability : float = 1.0,
     warp_integrations : int = 5,
-    warp_wavelength_range : List[int] = [64, 128],
-    warp_scale_range : List[int] = [1, 5],
+    warp_smoothing_range : List[int] = [10, 20],
+    warp_magnitude_range : List[int] = [1, 2],
     voxsize : int = 1,
     device : torch.device = None,
+    isdisp : bool = True,
     ) -> Tensor:
     """
     TODOC
     """
     ndim = len(shape)
-    meshgrid = grid_coordinates(shape, device=device)
-
     trf = None
 
     # generate a random affine
     if chance(affine_probability):
+
+        # compute meshgrid
+        meshgrid = grid_coordinates(shape, device=device)
+
         # scale max translation value so that it correctly corresponds to mm
         max_translation = max_translation / voxsize
         matrix = random_affine(
@@ -455,29 +474,27 @@ def random_transform(
             max_translation=max_translation,
             max_rotation=max_rotation,
             max_scaling=max_scaling,
-            device=device
-            )
+            device=device)
         trf = affine_to_displacement_field(matrix, meshgrid)
 
     # generate a nonlinear transform
     if chance(warp_probability):
-        wavelength = torch.ceil(torch.tensor(np.random.uniform(*warp_wavelength_range)) / voxsize)
-        scale = np.random.uniform(*warp_scale_range)
         disp = random_displacement_field(
             shape=shape,
-            scale=scale,
-            wavelength=wavelength,
+            smoothing=np.random.uniform(*warp_smoothing_range),
+            magnitude=np.random.uniform(*warp_magnitude_range),
             integrations=warp_integrations,
-            device=device
-            )
+            voxsize=voxsize,
+            device=device)
 
+        # merge with the affine transform if necessary
         if trf is None:
             trf = disp
         else:
-            disp = disp.movedim(-1, 0)
-            trf += spatial_transform(disp, trf, meshgrid=meshgrid).movedim(0, -1)
+            trf += spatial_transform(disp.movedim(-1, 0), trf, meshgrid=meshgrid).movedim(0, -1)
 
-    if trf is not None:
+    # convert to coordinates if specified
+    if trf is not None and not isdisp:
         trf = displacement_field_to_coords(trf)
 
     return trf

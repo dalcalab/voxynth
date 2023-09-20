@@ -6,7 +6,7 @@ from torch import Tensor
 
 def gaussian_kernel(
     sigma: List[float],
-    truncate: int = 4,
+    truncate: int = 3,
     device: torch.device = None) -> Tensor:
     """
     Generate a Gaussian kernel with the specified standard deviations.
@@ -57,16 +57,20 @@ def gaussian_kernel(
 def gaussian_blur(
     image: Tensor,
     sigma: List[float],
-    truncate: int = 4) -> Tensor:
+    batched: bool = False,
+    truncate: int = 3) -> Tensor:
     """
     Apply Gaussian blurring to an image.
 
     Parameters
     ----------
     image : Tensor
-        An input tensor of shape `(C, W, H[, D])` to blur.
+        An input tensor of shape `(C, W, H[, D])` to blur. A batch dimension
+        can be included by setting `batched` to `True`.
     sigma : float or List[float]
         Standard deviation(s) of the Gaussian filter along each dimension.
+    batched : bool, optional
+        Whether the input tensor includes a batch dimension.
     truncate : int, optional
         The number of standard deviations to extend the kernel before truncating.
 
@@ -80,20 +84,37 @@ def gaussian_blur(
     The Gaussian filter is applied using convolution. The size of the filter kernel is
     determined by the standard deviation and the truncation factor.
     """
-    ndim = image.ndim - 1
+    ndim = image.ndim - (2 if batched else 1)
 
-    # generate the filter
-    sigma = torch.as_tensor(sigma)
-    if sigma.ndim == 0:
-        sigma = sigma.repeat(ndim)
-    kernel = gaussian_kernel(sigma, truncate, image.device)
+    # sanity check for common mistake
+    if ndim == 4 and not batched:
+        raise ValueError(f'gaussian blur input has {image.ndim} dims, '
+                          'but batched option is False')
 
-    # pad the image
-    padding = [s // 2 for s in reversed(kernel.shape) for _ in range(2)]
-    image = torch.nn.functional.pad(image, padding, mode='reflect')
+    # normalize sigmas
+    if torch.as_tensor(sigma).ndim == 0:
+        sigma = [sigma] * ndim
+    if len(sigma) != ndim:
+        raise ValueError(f'sigma must be {ndim}D, but got length {len(sigma)}')
 
-    # apply the convolution
-    kernel = kernel.expand(image.shape[0], 1, *kernel.shape)
-    conv = getattr(torch.nn.functional, f'conv{ndim}d')
-    blurred = conv(image, kernel, groups=image.shape[0])
+    blurred = image if batched else image.unsqueeze(0)
+
+    for dim, s in enumerate(sigma):
+
+        # generate the kernel
+        sigma1d = [s if dim == i else 0 for i in range(ndim)]
+        kernel = gaussian_kernel(sigma1d, truncate, device=blurred.device)
+
+        # pad the image
+        padding = [s // 2 for s in reversed(kernel.shape) for _ in range(2)]
+        blurred = torch.nn.functional.pad(blurred, padding, mode='reflect')
+
+        # apply the convolution
+        kernel = kernel.expand(blurred.shape[1], 1, *kernel.shape)
+        conv = getattr(torch.nn.functional, f'conv{ndim}d')
+        blurred = conv(blurred, kernel, groups=image.shape[0])
+
+    if not batched:
+        blurred = blurred.squeeze(0)
+
     return blurred

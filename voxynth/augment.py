@@ -23,8 +23,8 @@ def image_augment(
     smoothing_one_axis_probability: float = 0.5,
     smoothing_max_sigma: float = 2.0,
     bias_field_probability: float = 0.0,
-    bias_field_max_strength: float = 0.5,
-    bias_field_wavelength_range: Tuple[float, float] = [20, 60],
+    bias_field_max_magnitude: float = 0.5,
+    bias_field_smoothing_range: Tuple[float, float] = [10, 30],
     background_noise_probability: float = 0.0,
     background_blob_probability: float = 0.0,
     background_roll_probability: float = 0.0,
@@ -83,10 +83,10 @@ def image_augment(
         The maximum sigma for the smoothing kernel.
     bias_field_probability: float, optional
         The probability of simulating a bias field.
-    bias_field_max_strength: float, optional
-        The maximum strength of the bias field.
-    bias_field_wavelength_range: Tuple, optional
-        The range of perlin noise wavelengths to generate the bias field.
+    bias_field_max_magnitude: float, optional
+        The maximum possible magnitude of of the bias field.
+    bias_field_smoothing_range: Tuple, optional
+        The range of perlin noise smoothing to generate the bias field.
     background_noise_probability: float, optional
         The probability of synthesizing perline noise in the background. Otherwise,
         the background will be set to zero.
@@ -208,8 +208,8 @@ def image_augment(
 
         if chance(background_noise_probability):
             # set the background as perline noise with a random mean
-            wavelength = torch.ceil(torch.tensor(np.random.uniform(1, 16)) / voxsize)
-            bg_image = perlin(shape, wavelength, device=device)
+            smoothing = torch.ceil(torch.tensor(np.random.uniform(1, 16)) / voxsize)
+            bg_image = perlin(shape, smoothing, device=device)
             bg_image /= np.random.uniform(1, 10)
             bg_image += np.random.rand()
         else:
@@ -218,8 +218,8 @@ def image_augment(
 
         # add random blobs of noise to the background
         if chance(background_blob_probability):
-            wavelength = torch.ceil(torch.tensor(np.random.uniform(32, 64)) / voxsize)
-            noise = perlin(shape, wavelength, device=device)
+            smoothing = torch.ceil(torch.tensor(np.random.uniform(32, 64)) / voxsize)
+            noise = perlin(shape, smoothing, device=device)
             blobs = noise > np.random.uniform(-0.2, 0.2)
             bg_image[blobs] = np.random.rand() if chance(0.5) else noise[blobs] * np.random.rand()
 
@@ -237,12 +237,11 @@ def image_augment(
 
         # ---- corruptions ----
 
-        # synthesize a bias field of varying degrees of wavelength and intensity with perlin noise
+        # synthesize a bias field of varying degrees of smoothing and intensity with perlin noise
         if chance(bias_field_probability):
-            wavelength = torch.ceil(torch.tensor(np.random.uniform(32, 128)) / voxsize)
-            strength = np.random.uniform(0, bias_field_max_strength)
-            cimg *= random_bias_field(shape=shape, wavelength=wavelength,
-                                      strength=strength, device=device)
+            smoothing = np.random.uniform(*bias_field_smoothing_range)
+            magnitude = np.random.uniform(0, bias_field_max_magnitude)
+            cimg *= random_bias_field(shape, smoothing, magnitude, voxsize=voxsize, device=device)
 
         # some small corruptions that fill random slices with random intensities
         if chance(line_corruption_probability):
@@ -309,8 +308,9 @@ def image_augment(
 
 def random_bias_field(
     shape : List[int],
-    wavelength : int,
-    strength : float = 0.1,
+    smoothing : float = 20,
+    magnitude : float = 0.1,
+    voxsize :  float = 1,
     device: torch.device = None) -> Tensor:
     """
     Generate a random bias field with perlin noise. The bias field
@@ -320,10 +320,15 @@ def random_bias_field(
     ----------
     shape : List[int]
         Shape of the bias field.
-    wavelength : int
-        Wavelength of the bias field in voxels.
-    strength : float, optional
-        Magnitude of the field.
+    smoothing : float or List[float]
+        The spatial smoothing sigma in voxel coordinates. If a
+        single value is provided, it will be used for all dimensions.
+    magnitude : float or List[float]
+        The standard deviation of the noise across dimensions. If a single value is
+        provided, it will be used for all dimensions.
+    voxsize : float or List[float]
+        The relative size of the voxel. This is used to appropriately scale
+        the smoothing parameter.
     device : torch.device, optional
         The device to create the field on.
 
@@ -332,9 +337,7 @@ def random_bias_field(
     Tensor
         Bias field image.
     """
-    bias = perlin(shape=shape, wavelength=wavelength, device=device)
-    bias *= strength / bias.std()
-    return bias.exp()
+    return perlin(shape, smoothing / voxsize, magnitude, device=device).exp()
 
 
 def random_linear_wave(meshgrid : Tensor, wavelength : float) -> Tensor:
