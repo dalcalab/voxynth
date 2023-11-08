@@ -123,8 +123,8 @@ def random_flip(dim : int, *args, prob : float = 0.5):
     """
     result = tuple([arg.flip([dim]) for arg in args]) if chance(prob) else args
     if len(args) == 1:
-        return args[0]
-    return args
+        return result[0]
+    return result
 
 
 def compose_affine(
