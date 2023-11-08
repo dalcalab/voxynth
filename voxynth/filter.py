@@ -40,7 +40,7 @@ def gaussian_kernel(
     # create a meshgrid of indices for all dimensions and determine shape of the kernel
     coords = torch.stack(torch.meshgrid(*ranges, indexing='ij'), dim=-1)
     kernel_shape = coords.shape[:-1]
-    
+
     # convert the standard deviations to a tensor and compute the inverse squares
     sigma = torch.as_tensor(sigma, dtype=torch.float32, device=device)
     sigma2 = 1 / torch.clip(sigma, min=1e-5).pow(2)
@@ -52,6 +52,37 @@ def gaussian_kernel(
     # normalize the kernel
     pdf /= pdf.sum()
     return pdf
+
+
+def gaussian_kernel_1d(sigma, truncate: int = 3, device=None, dtype=None):
+    """
+    Generate a 1D Gaussian kernel with the specified standard deviations.
+
+    Parameters
+    ----------
+    sigma : float
+        A list of standard deviations for each dimension.
+    truncate : int, optional
+        The number of standard deviations to extend the kernel before truncating.
+    device : torch.device, optional
+        The device on which to create the kernel.
+    dtype : torch.dtype | None, optional
+        Data type of the returned kernel.
+
+    Returns
+    -------
+    Tensor
+        A kernel of shape `2 * truncate * sigma + 1`.
+
+    Notes
+    -----
+    The kernel is truncated when its values drop below `1e-5` of the maximum value.
+    """
+    r = int(truncate * sigma + 0.5)
+    x = torch.arange(-r, r + 1, device=device, dtype=dtype)
+    sigma2 = 1 / torch.clip(torch.as_tensor(sigma), min=1e-5).pow(2)
+    pdf = torch.exp(-0.5 * (x.pow(2) * sigma2))
+    return pdf / pdf.sum()
 
 
 def gaussian_blur(
@@ -99,20 +130,37 @@ def gaussian_blur(
 
     blurred = image if batched else image.unsqueeze(0)
 
-    for dim, s in enumerate(sigma):
+    if all(s == sigma[0] for s in sigma):
+        # Isotropic, can use the same vector in all directions cases. Since
+        # creating the kernel is actually one of the most time intensive steps
+        # this is an efficiency gain worth exploiting
+        kernel_vec = gaussian_kernel_1d(
+            sigma[0],
+            truncate,
+            device=blurred.device,
+            dtype=blurred.dtype,
+        )
+        kernel_vecs = [kernel_vec] * ndim
+    else:
+        # Three different kernels, one for each direction
+        kernel_vecs = [
+            gaussian_kernel_1d(
+                s,
+                truncate,
+                device=blurred.device,
+                dtype=blurred.dtype,
+            )
+            for s in sigma
+        ]
 
-        # generate the kernel
-        sigma1d = [s if dim == i else 0 for i in range(ndim)]
-        kernel = gaussian_kernel(sigma1d, truncate, device=blurred.device)
-
-        # pad the image
-        padding = [s // 2 for s in reversed(kernel.shape) for _ in range(2)]
-        blurred = torch.nn.functional.pad(blurred, padding, mode='reflect')
+    for dim, kernel in enumerate(kernel_vecs):
 
         # apply the convolution
-        kernel = kernel.expand(blurred.shape[1], 1, *kernel.shape)
+        slices = [None] * (ndim + 2)
+        slices[dim + 2] = slice(None)
+        kernel_dim = kernel[slices]
         conv = getattr(torch.nn.functional, f'conv{ndim}d')
-        blurred = conv(blurred, kernel, groups=image.shape[0])
+        blurred = conv(blurred, kernel_dim, groups=image.shape[0], padding="same")
 
     if not batched:
         blurred = blurred.squeeze(0)

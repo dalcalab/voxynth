@@ -7,7 +7,7 @@ from torch import Tensor
 from .filter import gaussian_blur
 
 
-def perlin(shape, smoothing, magnitude, device=None):
+def perlin(shape, smoothing, magnitude=1.0, device=None):
     """
     Generates a perlin noise image.
 
