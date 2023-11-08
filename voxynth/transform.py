@@ -102,6 +102,31 @@ def resize(
     return image
 
 
+def random_flip(dim : int, *args, prob : float = 0.5):
+    """
+    Randomly flips an image (or set of images) along the given dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to flip. Note that the first dimension
+        is the channel dimension.
+    *args : torch.Tensor
+        The image(s) to flip.
+    prob : float
+        The probability of flipping the image(s).
+
+    Returns
+    -------
+    torch.Tensor or tuple[torch.Tensor]
+        The flipped image(s).
+    """
+    result = tuple([arg.flip([dim]) for arg in args]) if chance(prob) else args
+    if len(args) == 1:
+        return args[0]
+    return args
+
+
 def compose_affine(
     ndim : int,
     translation : Tensor = None,
