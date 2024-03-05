@@ -282,10 +282,10 @@ def image_augment(
                     vsa = np.full(ndim, 1.0, dtype=np.float32)
                     ind = np.random.randint(ndim)
                     if voxsize[ind] < resized_max_voxsize:
-                        vsa[ind] = np.random.uniform(voxsize[ind], resized_max_voxsize)
+                        vsa[ind] = np.random.uniform(voxsize[ind].cpu(), resized_max_voxsize)
                     scale = tuple(1 / vsa)
                 else:
-                    scale = tuple(1 / np.random.uniform(voxsize, resized_max_voxsize))
+                    scale = tuple(1 / np.random.uniform(voxsize.cpu(), resized_max_voxsize))
                 # downsample then resample, always use nearest here because if we don't enable align_corners,
                 # then the image will be moved around a lot
                 linear = 'trilinear' if ndim == 3 else 'bilinear'
