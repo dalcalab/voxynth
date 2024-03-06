@@ -289,8 +289,18 @@ def image_augment(
                 # downsample then resample, always use nearest here because if we don't enable align_corners,
                 # then the image will be moved around a lot
                 linear = 'trilinear' if ndim == 3 else 'bilinear'
-                ds = torch.nn.functional.interpolate(cimg.unsqueeze(0).unsqueeze(0), scale_factor=scale, mode=linear, align_corners=True)
-                cimg = torch.nn.functional.interpolate(ds, shape, mode=linear, align_corners=True).squeeze(0)
+                ds = torch.nn.functional.interpolate(
+                    cimg.unsqueeze(0).unsqueeze(0),
+                    scale_factor=scale,
+                    mode=linear,
+                    align_corners=True,
+                )
+                cimg = torch.nn.functional.interpolate(
+                    ds,
+                    shape,
+                    mode=linear,
+                    align_corners=True,
+                ).squeeze(0).squeeze(0)
 
         # ---- gamma exponentiation ----
 
