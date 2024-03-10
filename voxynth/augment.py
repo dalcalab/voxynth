@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import torch
 
@@ -288,13 +289,46 @@ def image_augment(
                     scale = tuple(1 / np.random.uniform(voxsize.cpu(), resized_max_voxsize))
                 # downsample then resample, always use nearest here because if we don't enable align_corners,
                 # then the image will be moved around a lot
-                linear = 'trilinear' if ndim == 3 else 'bilinear'
-                ds = torch.nn.functional.interpolate(
-                    cimg.unsqueeze(0).unsqueeze(0),
-                    scale_factor=scale,
-                    mode=linear,
-                    align_corners=True,
-                )
+                if ndim == 2:
+                    # In the 2D case, torch's interpolate function has a
+                    # built-in antialias feature, so we'll just use that
+                    linear = 'bilinear'
+                    ds = torch.nn.functional.interpolate(
+                        cimg.unsqueeze(0).unsqueeze(0),
+                        scale_factor=scale,
+                        mode=linear,
+                        align_corners=True,
+                        antialias=True,
+                    )
+                else:
+                    # In the 3D case, torch's interpolate function does
+                    # not have the built-in antialias feature. Instead,
+                    # we'll apply a crude gaussian blur before downsampling
+                    # to alleviate aliasing
+                    linear = 'trilinear'
+
+                    # The frequency (as a multiple of the filter's
+                    # frequency-domain standard deviation) that is considered
+                    # the cut-off frequency when a gaussian filter is used as a
+                    # low-pass filter
+                    sigma_cutoff = 1.5
+
+                    # A suitable low-pass filter (derived using nyquist
+                    # frequency and the above cut-off)
+                    low_pass_sigma = sigma_cutoff / (np.array(scale) * math.pi)
+
+                    # Perform the low-pass antialiasing pre-filter
+                    cimg = gaussian_blur(cimg.unsqueeze(0), sigma=low_pass_sigma)
+
+                    # Downsample
+                    ds = torch.nn.functional.interpolate(
+                        cimg.unsqueeze(0),
+                        scale_factor=scale,
+                        mode=linear,
+                        align_corners=True,
+                    )
+
+                # Upsample to original spacing
                 cimg = torch.nn.functional.interpolate(
                     ds,
                     shape,
