@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import torch
 
@@ -135,6 +136,8 @@ def image_augment(
     voxsize = torch.as_tensor(voxsize, device=device)
     if voxsize.ndim == 0:
         voxsize = voxsize.repeat(ndim)
+    elif len(voxsize) != ndim:
+        raise ValueError("'voxsize' does not match dimensionality of input image")
 
     # convert to float32 if necessary
     image = image.clone() if torch.is_floating_point(image) else image.type(torch.float32)
@@ -203,7 +206,7 @@ def image_augment(
                 # otherwise just smooth in all dimensions
                 sigma = np.random.uniform(0, max_sigma, size=ndim)
             cimg = gaussian_blur(cimg.unsqueeze(0), sigma).squeeze(0)
-    
+
         # ---- background synthesis ----
 
         if chance(background_noise_probability):
@@ -277,16 +280,61 @@ def image_augment(
             if torch.any(voxsize < resized_max_voxsize):
                 # half the time only downsample one random axis to mimic thick slice acquisitions
                 if chance(resized_one_axis_probability):
-                    vsa = np.full(ndim, voxsize, dtype=np.float32)
-                    vsa[np.random.randint(ndim)] = np.random.uniform(voxsize.min().cpu(), resized_max_voxsize)
+                    vsa = np.full(ndim, 1.0, dtype=np.float32)
+                    ind = np.random.randint(ndim)
+                    if voxsize[ind] < resized_max_voxsize:
+                        vsa[ind] = np.random.uniform(voxsize[ind].cpu(), resized_max_voxsize)
                     scale = tuple(1 / vsa)
                 else:
-                    scale = tuple(1 / np.random.uniform(voxsize, resized_max_voxsize))
+                    scale = tuple(1 / np.random.uniform(voxsize.cpu(), resized_max_voxsize))
                 # downsample then resample, always use nearest here because if we don't enable align_corners,
                 # then the image will be moved around a lot
-                linear = 'trilinear' if ndim == 3 else 'bilinear'
-                ds = torch.nn.functional.interpolate(cimg.unsqueeze(0), scale_factor=scale, mode=linear, align_corners=True)
-                cimg = torch.nn.functional.interpolate(ds, shape, mode=linear, align_corners=True).squeeze(0)
+                if ndim == 2:
+                    # In the 2D case, torch's interpolate function has a
+                    # built-in antialias feature, so we'll just use that
+                    linear = 'bilinear'
+                    ds = torch.nn.functional.interpolate(
+                        cimg.unsqueeze(0).unsqueeze(0),
+                        scale_factor=scale,
+                        mode=linear,
+                        align_corners=True,
+                        antialias=True,
+                    )
+                else:
+                    # In the 3D case, torch's interpolate function does
+                    # not have the built-in antialias feature. Instead,
+                    # we'll apply a crude gaussian blur before downsampling
+                    # to alleviate aliasing
+                    linear = 'trilinear'
+
+                    # The frequency (as a multiple of the filter's
+                    # frequency-domain standard deviation) that is considered
+                    # the cut-off frequency when a gaussian filter is used as a
+                    # low-pass filter
+                    sigma_cutoff = 1.5
+
+                    # A suitable low-pass filter (derived using nyquist
+                    # frequency and the above cut-off)
+                    low_pass_sigma = sigma_cutoff / (np.array(scale) * math.pi)
+
+                    # Perform the low-pass antialiasing pre-filter
+                    cimg = gaussian_blur(cimg.unsqueeze(0), sigma=low_pass_sigma)
+
+                    # Downsample
+                    ds = torch.nn.functional.interpolate(
+                        cimg.unsqueeze(0),
+                        scale_factor=scale,
+                        mode=linear,
+                        align_corners=True,
+                    )
+
+                # Upsample to original spacing
+                cimg = torch.nn.functional.interpolate(
+                    ds,
+                    shape,
+                    mode=linear,
+                    align_corners=True,
+                ).squeeze(0).squeeze(0)
 
         # ---- gamma exponentiation ----
 
