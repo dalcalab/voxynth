@@ -399,8 +399,11 @@ def displacement_field_to_coords(disp, meshgrid=None) -> Tensor:
 
     coords = (meshgrid + disp)
     for d in range(ndim):
-        coords[..., d] *= 2 / (shape[d] - 1)
-        coords[..., d] -= 1
+        if shape[d] == 1:
+            coords[..., d] *= 0
+        else:
+            coords[..., d] *= 2 / (shape[d] - 1)
+            coords[..., d] -= 1
 
     coords = coords.flip(-1)
 
