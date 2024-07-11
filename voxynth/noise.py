@@ -36,7 +36,7 @@ def smooth_gaussian(shape, sigma, magnitude=1.0, device=None, method='blur'):
         noise = torch.normal(0, 1, size=shape, device=device)
         noise = gaussian_blur(noise.unsqueeze(0), sigma).squeeze(0)
     elif method == 'upsample':
-        downshape = tuple([int(s // sigma) for s in shape])
+        downshape = tuple([max(int(s // sigma), 2) for s in shape])
         noise = torch.normal(0, 1, size=(1, 1, *downshape), device=device)
         mode = 'trilinear' if len(shape) == 3 else 'bilinear'
         noise = torch.nn.functional.interpolate(noise, shape, mode=mode).view(shape)
