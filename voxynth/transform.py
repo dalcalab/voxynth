@@ -11,7 +11,7 @@ from .noise import perlin
 
 def resize(
     image : Tensor,
-    scale_factor : float or List[float] = None,
+    scale_factor : List[float] = None,
     shape : List[int] = None,
     nearest : bool = False) -> Tensor:
     """
@@ -370,7 +370,8 @@ def random_displacement_field(
     integrations : int = 0,
     voxsize : float = 1,
     meshgrid : Tensor = None,
-    device: torch.device = None) -> Tensor:
+    device: torch.device = None,
+    perlin_method: str = 'upsample') -> Tensor:
     """
     TODOC
     """
@@ -378,7 +379,7 @@ def random_displacement_field(
     magnitude = magnitude / voxsize
 
     ndim = len(shape)
-    disp = [perlin(shape, smoothing, magnitude, device=device) for i in range(ndim)]
+    disp = [perlin(shape, smoothing, magnitude, method=perlin_method, device=device) for i in range(ndim)]
     disp = torch.stack(disp, dim=-1)
 
     if integrations > 0:
@@ -482,6 +483,7 @@ def random_transform(
     voxsize : int = 1,
     device : torch.device = None,
     isdisp : bool = True,
+    perlin_method: str = 'upsample',
     ) -> Tensor:
     """
     TODOC
@@ -513,7 +515,8 @@ def random_transform(
             magnitude=np.random.uniform(*warp_magnitude_range),
             integrations=warp_integrations,
             voxsize=voxsize,
-            device=device)
+            device=device,
+            perlin_method=perlin_method)
 
         # merge with the affine transform if necessary
         if trf is None:
