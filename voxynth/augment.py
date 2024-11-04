@@ -262,7 +262,7 @@ def image_augment(
         # generate linear or circular wave (grating) artifacts across the image
         if chance(wave_artifact_probability):
             meshgrid = grid_coordinates(shape, device=device)
-            if chance(0.5):
+            if chance(1.0):
                 wavelength = np.random.uniform(2, 8)
                 grating = random_linear_wave(meshgrid, wavelength)
                 cimg += grating * np.random.rand() * wave_artifact_max_strength
@@ -385,7 +385,7 @@ def random_bias_field(
     Tensor
         Bias field image.
     """
-    return perlin(shape, smoothing / voxsize, magnitude, device=device).exp()
+    return perlin(shape, smoothing / voxsize, magnitude, device=device, method='upsample').exp()
 
 
 def random_linear_wave(meshgrid : Tensor, wavelength : float) -> Tensor:
