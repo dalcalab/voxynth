@@ -267,25 +267,52 @@ def random_affine(
     max_translation: float = 0,
     max_rotation: float = 0,
     max_scaling: float = 1,
-    device: torch.device = None) -> Tensor:
+    device: torch.device = None,
+    sampling: bool = True) -> Tensor:
     """
-    TODOC
+    Parameters
+    ----------
+    ndim : int
+        Dimensionality of target transform.
+    max_translation : float
+        Range to sample translation parameters from. Scalar values define the max
+        deviation from 0.0 (-max_translation, max_translation).
+    max_rotation : float
+        Range to sample rotation parameters from. Scalar values define the max
+        deviation from 0.0 (-max_rotation, max_rotation).
+    max_scaling : float
+        Max to sample scale parameters from.
+        It is converted into a 2-element array defines the (min, max) deviation from 1.0.
+
+    Returns
+    -------
+    Tensor
+        vox2vox affine matrix rotating around the image center
     """
 
-    # 
-    translation_range = sorted([-max_translation, max_translation])
-    translation = np.random.uniform(*translation_range, size=ndim)
+    #
+    if (sampling):
+        translation_range = sorted([-max_translation, max_translation])
+        translation = np.random.uniform(*translation_range, size=ndim)
+    else:
+        translation = np.array([max_translation] * ndim)
 
-    # 
-    rotation_range = sorted([-max_rotation, max_rotation])
-    rotation = np.random.uniform(*rotation_range, size=(1 if ndim == 2 else 3))
+    #
+    if (sampling):
+        rotation_range = sorted([-max_rotation, max_rotation])
+        rotation = np.random.uniform(*rotation_range, size=(1 if ndim == 2 else 3))
+    else:
+        rotation = np.array([max_rotation] * (1 if ndim == 2 else 3))
 
-    # 
-    if max_scaling < 1:
-        raise ValueError('max scaling to random affine cannot be less than 1, '
-                         'see function doc for more info')
-    inv = np.random.choice([-1, 1], size=ndim)
-    scale = np.random.uniform(1, max_scaling, size=ndim) ** inv
+    #
+    if (sampling):
+        if max_scaling < 1:
+            raise ValueError('max scaling to random affine cannot be less than 1, '
+                             'see function doc for more info')
+        inv = np.random.choice([-1, 1], size=ndim)
+        scale = np.random.uniform(1, max_scaling, size=ndim) ** inv
+    else:
+        scale = np.array(max_scaling * ndim)
 
     # compose from random paramters
     aff = compose_affine(
@@ -307,7 +334,7 @@ def affine_to_displacement_field(
     Parameters
     ----------
     affine : Tensor
-        Affine transformation matrix.
+        Affine transformation matrix. It is expected to be a vox2vox target to source transformation.
     meshgrid : Tensor
         The meshgrid tensor of shape `(W, H[, D], N)`, where N is the spatial dimensionality.
     rotate_around_center : bool, optional
@@ -334,6 +361,8 @@ def affine_to_displacement_field(
     coords = torch.cat([coords, ones], dim=-1)
 
     # apply the affine transformation to the coordinates to get the shift vector
+    # affine needs to be vox2vox transformation matrix, and mapping from target to source
+    # the computed shift is the absolute crs in source space
     shift = (affine @ coords.T)[:ndim].T
 
     # reshape the shift vector to match the shape of the meshgrid and subtract
@@ -351,6 +380,7 @@ def integrate_displacement_field(
     TODOC
     """
     if meshgrid is None:
+        # generate a crs grid
         meshgrid = grid_coordinates(disp.shape[:-1], device=disp.device)
 
     if steps == 0:
@@ -378,6 +408,7 @@ def random_displacement_field(
     smoothing = smoothing / voxsize
     magnitude = magnitude / voxsize
 
+    # randomly sample a displacement crs field of the input shape
     ndim = len(shape)
     disp = [perlin(shape, smoothing, magnitude, method=perlin_method, device=device) for i in range(ndim)]
     disp = torch.stack(disp, dim=-1)
@@ -390,7 +421,19 @@ def random_displacement_field(
 
 def displacement_field_to_coords(disp, meshgrid=None) -> Tensor:
     """
-    TODOC
+    Convert the displacement crs to absolute crs scaled to range [-1, 1].
+
+    Parameters:
+    -----------
+    disp: torch.Tensor
+        Displacement crs field
+    meshgrid: torch.Tensor, optional
+       crs grid for the image shape
+
+    Returns:
+    --------
+    torch.Tensor:
+        The absolute crs field scaled to range [-1, 1].
     """
     if meshgrid is None:
         meshgrid = grid_coordinates(disp.shape[:-1], device=disp.device)
@@ -398,6 +441,8 @@ def displacement_field_to_coords(disp, meshgrid=None) -> Tensor:
     shape = disp.shape[:-1]
     ndim = disp.shape[-1]
 
+    # compute the absolute crs field
+    # scale the field to range [-1, 1], which is expected by torch.nn.functional.grid_sample()
     coords = (meshgrid + disp)
     for d in range(ndim):
         if shape[d] == 1:
@@ -445,6 +490,7 @@ def spatial_transform(
 
     # 
     if isdisp:
+        # convert the displacement crs to absolute crs scaled to range [-1, 1]
         trf = displacement_field_to_coords(trf, meshgrid=meshgrid)
 
     # 
@@ -460,6 +506,7 @@ def spatial_transform(
     # 
     image = image.unsqueeze(0)
     trf = trf.unsqueeze(0)
+    # trf is an absolute crs field in the range of [-1, 1]
     interped = torch.nn.functional.grid_sample(image, trf, align_corners=True, mode=method)
     interped = interped.squeeze(0)
 
@@ -484,9 +531,23 @@ def random_transform(
     device : torch.device = None,
     isdisp : bool = True,
     perlin_method: str = 'upsample',
+    sampling: bool = True,
     ) -> Tensor:
     """
-    TODOC
+    generate a randomly sampled transform
+
+    Parameters:
+    -----------
+    disp: torch.Tensor
+        Displacement crs field
+    meshgrid: torch.Tensor, optional
+       crs grid for the image shape
+
+    Returns:
+    --------
+    torch.Tensor:
+       displacement crs field, or
+       absolute crs field scaled to range [-1, 1] if isdisp is False
     """
     ndim = len(shape)
     trf = None
@@ -494,17 +555,21 @@ def random_transform(
     # generate a random affine
     if chance(affine_probability):
 
-        # compute meshgrid
+        # compute meshgrid, it is the target crs
         meshgrid = grid_coordinates(shape, device=device)
 
-        # scale max translation value so that it correctly corresponds to mm
+        # convert max_translation from mm to voxel
+        # the matrix returned from random_affine() is vox2vox rotating around the image center.
+        # it is used as target to source transformation in affine_to_displacement_field() to covert
+        # the vox2vox matrix to dispacement field.
         max_translation = max_translation / voxsize
         matrix = random_affine(
             ndim=ndim,
             max_translation=max_translation,
             max_rotation=max_rotation,
             max_scaling=max_scaling,
-            device=device)
+            device=device,
+            sampling=sampling)
         trf = affine_to_displacement_field(matrix, meshgrid)
 
     # generate a nonlinear transform
@@ -526,6 +591,7 @@ def random_transform(
 
     # convert to coordinates if specified
     if trf is not None and not isdisp:
+        # compute the absolute crs field scaled to range [-1, 1]
         trf = displacement_field_to_coords(trf)
 
     return trf

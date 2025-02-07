@@ -78,7 +78,7 @@ def perlin(shape, smoothing=None, magnitude=1.0, weights=None, device=None, meth
     if smoothing is None:
         smoothing = 2 ** np.arange(np.log2(max(shape)))[1:]
     elif np.isscalar(smoothing):
-        return smooth_gaussian(shape, smoothing, magnitude, device=device)
+        return smooth_gaussian(shape, smoothing, magnitude, device=device, method=method)
 
     if len(smoothing) == 1:
         weights = [None]
