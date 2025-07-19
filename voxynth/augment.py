@@ -9,8 +9,6 @@ import voxelmorph.nn.functional as vxf
 
 from .utility import chance
 from .utility import quantile
-# from .filter import gaussian_blur
-from .noise import perlin
 
 
 def image_augment(
@@ -220,7 +218,7 @@ def image_augment(
         if chance(background_noise_probability):
             # set the background as perline noise with a random mean
             smoothing = torch.ceil(torch.tensor(np.random.uniform(1, 16)) / voxsize)
-            bg_image = perlin(shape, smoothing, device=device)
+            bg_image = vxf.perlin(shape, smoothing, device=device)
             bg_image /= np.random.uniform(1, 10)
             bg_image += np.random.rand()
         else:
@@ -230,7 +228,7 @@ def image_augment(
         # add random blobs of noise to the background
         if chance(background_blob_probability):
             smoothing = torch.ceil(torch.tensor(np.random.uniform(32, 64)) / voxsize)
-            noise = perlin(shape, smoothing, device=device)
+            noise = vxf.perlin(shape, smoothing, device=device)
             blobs = noise > np.random.uniform(-0.2, 0.2)
             bg_image[blobs] = np.random.rand() if chance(0.5) else noise[blobs] * np.random.rand()
 

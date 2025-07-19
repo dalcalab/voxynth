@@ -5,4 +5,3 @@ from typing import List, Union
 from torch import Tensor
 
 from .utility import chance
-from .noise import perlin
