@@ -9,7 +9,7 @@ import voxelmorph.nn.functional as vxf
 
 from .utility import chance
 from .utility import quantile
-from .filter import gaussian_blur
+# from .filter import gaussian_blur
 from .noise import perlin
 
 
@@ -213,7 +213,7 @@ def image_augment(
             else:
                 # otherwise just smooth in all dimensions
                 sigma = np.random.uniform(0, max_sigma, size=ndim) if (sampling) else max_sigma
-            cimg = gaussian_blur(cimg.unsqueeze(0), sigma).squeeze(0)
+            cimg = vxf.gaussian_blur(cimg.unsqueeze(0), sigma).squeeze(0)
 
         # ---- background synthesis ----
 
@@ -326,7 +326,7 @@ def image_augment(
                     low_pass_sigma = sigma_cutoff / (np.array(scale) * math.pi)
 
                     # Perform the low-pass antialiasing pre-filter
-                    cimg = gaussian_blur(cimg.unsqueeze(0), sigma=low_pass_sigma)
+                    cimg = vxf.gaussian_blur(cimg.unsqueeze(0), sigma=low_pass_sigma)
 
                     # Downsample
                     ds = torch.nn.functional.interpolate(

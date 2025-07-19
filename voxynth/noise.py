@@ -6,4 +6,3 @@ import torch
 from torch import Tensor
 
 import voxynth
-from .filter import gaussian_blur
