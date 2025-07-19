@@ -7,7 +7,6 @@ import torch
 from torch import Tensor
 import voxelmorph.nn.functional as vxf
 
-from .utility import chance
 from .utility import quantile
 
 
@@ -196,15 +195,15 @@ def image_augment(
             raise ValueError('image intensities must be between 0 and 1')
 
         # invert the image intensities
-        if chance(inversion_probability):
+        if vxf.chance(inversion_probability):
             cimg = 1 - cimg
 
         # ---- intensity smoothing ----
 
         # apply a random gaussian smoothing kernel
-        if chance(smoothing_probability):
+        if vxf.chance(smoothing_probability):
             max_sigma = (smoothing_max_sigma / voxsize.min()).cpu().numpy()  # TODO: just use torch
-            if chance(smoothing_one_axis_probability):
+            if vxf.chance(smoothing_one_axis_probability):
                 # here we only smooth one axis to emulate thick slice data
                 sigma = np.zeros(ndim)
                 sigma[np.random.randint(ndim)] = np.random.uniform(0, max_sigma) if (sampling) else max_sigma
@@ -215,7 +214,7 @@ def image_augment(
 
         # ---- background synthesis ----
 
-        if chance(background_noise_probability):
+        if vxf.chance(background_noise_probability):
             # set the background as perline noise with a random mean
             smoothing = torch.ceil(torch.tensor(np.random.uniform(1, 16)) / voxsize)
             bg_image = vxf.perlin(shape, smoothing, device=device)
@@ -226,14 +225,14 @@ def image_augment(
             bg_image = torch.zeros(shape, device=device)
 
         # add random blobs of noise to the background
-        if chance(background_blob_probability):
+        if vxf.chance(background_blob_probability):
             smoothing = torch.ceil(torch.tensor(np.random.uniform(32, 64)) / voxsize)
             noise = vxf.perlin(shape, smoothing, device=device)
             blobs = noise > np.random.uniform(-0.2, 0.2)
-            bg_image[blobs] = np.random.rand() if chance(0.5) else noise[blobs] * np.random.rand()
+            bg_image[blobs] = np.random.rand() if vxf.chance(0.5) else noise[blobs] * np.random.rand()
 
         # here we copy-paste parts of the image around the background via axis rolling
-        if chance(background_roll_probability):
+        if vxf.chance(background_roll_probability):
             for i in range(np.random.randint(1, 4)):
                 dims = tuple(np.random.permutation(ndim)[:np.random.choice((1, 2))])
                 shifts = [int(np.random.uniform(shape[d] / 4, shape[d] / 2)) for d in dims]
@@ -247,13 +246,13 @@ def image_augment(
         # ---- corruptions ----
 
         # synthesize a bias field of varying degrees of smoothing and intensity with perlin noise
-        if chance(bias_field_probability):
+        if vxf.chance(bias_field_probability):
             smoothing = np.random.uniform(*bias_field_smoothing_range)
             magnitude = np.random.uniform(0, bias_field_max_magnitude) if (sampling) else bias_field_max_magnitude
             cimg *= random_bias_field(shape, smoothing, magnitude, voxsize=voxsize, device=device, method=bias_field_generation_method)
 
         # some small corruptions that fill random slices with random intensities
-        if chance(line_corruption_probability):
+        if vxf.chance(line_corruption_probability):
             for i in range(np.random.randint(1, 4)):
                 indices = [slice(0, s) for s in shape]
                 axis = np.random.randint(ndim)
@@ -261,14 +260,14 @@ def image_augment(
                 cimg[indices] = np.random.rand()
 
         # add gaussian noise across the entire image
-        if chance(added_noise_probability):
+        if vxf.chance(added_noise_probability):
             std = np.random.uniform(0, added_noise_max_sigma) if (sampling) else added_noise_max_sigma
             cimg += torch.normal(mean=0, std=std, size=shape, device=device)
 
         # generate linear or circular wave (grating) artifacts across the image
-        if chance(wave_artifact_probability):
+        if vxf.chance(wave_artifact_probability):
             meshgrid = vxf.grid_coordinates(shape, device=device)
-            if chance(1.0):
+            if vxf.chance(1.0):
                 wavelength = np.random.uniform(2, 8)
                 grating = random_linear_wave(meshgrid, wavelength)
                 cimg += grating * np.random.rand() * wave_artifact_max_strength
@@ -280,12 +279,12 @@ def image_augment(
         # ---- resizing ----
 
         # here we account for low-resolution images that have been upsampled to the target resolution
-        if chance(resized_probability):
+        if vxf.chance(resized_probability):
             # there's no need to downsample if the target resolution is less
             # than the max ds voxsize allowed
             if torch.any(voxsize < resized_max_voxsize):
                 # half the time only downsample one random axis to mimic thick slice acquisitions
-                if chance(resized_one_axis_probability):
+                if vxf.chance(resized_one_axis_probability):
                     vsa = np.full(ndim, 1.0, dtype=np.float32)
                     ind = np.random.randint(ndim)
                     if voxsize[ind] < resized_max_voxsize:
@@ -350,7 +349,7 @@ def image_augment(
 
         # gamma exponentiation of the intensities to shift signal
         # distribution in a random direction
-        if chance(gamma_scaling_probability):
+        if vxf.chance(gamma_scaling_probability):
             gamma = np.random.uniform(-gamma_scaling_max, gamma_scaling_max) if (sampling) else gamma_scaling_max
             cimg = cimg.pow(np.exp(gamma))
 
@@ -488,7 +487,7 @@ def random_cropping_mask(mask: Tensor) -> Tensor:
         displacement = int(np.random.uniform(0, (s.stop - s.start) / 3))
         cropping = [slice(0, d) for d in shape]
         # either move the low axis up and the high axis down... if that makes any sense
-        if chance(0.5):
+        if vxf.chance(0.5):
             cropping[axis] = slice(0, s.start + displacement)
         else:
             cropping[axis] = slice(s.stop - displacement, shape[axis])

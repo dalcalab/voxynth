@@ -4,8 +4,6 @@ import torch
 from typing import Dict
 from torch import Tensor
 
-from .utility import chance
-
 
 def remap_intesities(
     image: Tensor,
