@@ -1,13 +1,14 @@
 import math
+from typing import List, Tuple
+
+
 import numpy as np
 import torch
-
 from torch import Tensor
-from typing import List, Tuple
+import voxelmorph.nn.functional as vxf
 
 from .utility import chance
 from .utility import quantile
-from .utility import grid_coordinates
 from .filter import gaussian_blur
 from .noise import perlin
 
@@ -268,7 +269,7 @@ def image_augment(
 
         # generate linear or circular wave (grating) artifacts across the image
         if chance(wave_artifact_probability):
-            meshgrid = grid_coordinates(shape, device=device)
+            meshgrid = vxf.grid_coordinates(shape, device=device)
             if chance(1.0):
                 wavelength = np.random.uniform(2, 8)
                 grating = random_linear_wave(meshgrid, wavelength)
